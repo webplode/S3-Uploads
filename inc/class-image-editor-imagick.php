@@ -92,8 +92,11 @@ class Image_Editor_Imagick extends WP_Image_Editor_Imagick {
 		$original_extension = $extension;
 		$original_filename = $filename;
 
-		// Convert PNG, JPG, JPEG to WebP
-		if ( $this->should_convert_to_webp( $mime_type ) ) {
+		// Check if we should convert to WebP based on original mime type
+		$should_convert_to_webp = $this->should_convert_to_webp( $original_mime_type );
+
+		// Convert PNG, JPG, JPEG to WebP - only upload WebP version to S3
+		if ( $should_convert_to_webp ) {
 			$this->log_debug( "Starting WebP conversion for file: {$filename}, original mime type: {$original_mime_type}" );
 			
 			$mime_type = 'image/webp';
@@ -105,7 +108,7 @@ class Image_Editor_Imagick extends WP_Image_Editor_Imagick {
 				$this->log_debug( "Converted filename from '{$original_filename}' to '{$filename}'" );
 			}
 		} else {
-			$this->log_debug( "Skipping WebP conversion for mime type: {$mime_type}" );
+			$this->log_debug( "Skipping WebP conversion for mime type: {$original_mime_type}" );
 		}
 
 		if ( ! $filename ) {
@@ -122,7 +125,7 @@ class Image_Editor_Imagick extends WP_Image_Editor_Imagick {
 		}
 
 		// Convert to WebP if needed
-		if ( $this->should_convert_to_webp( $original_mime_type ) ) {
+		if ( $should_convert_to_webp ) {
 			$this->log_debug( "Applying WebP format conversion with quality: " . apply_filters( 's3_uploads_webp_quality', 85 ) );
 			
 			try {
@@ -177,7 +180,7 @@ class Image_Editor_Imagick extends WP_Image_Editor_Imagick {
 			'mime-type' => $mime_type,
 		];
 
-		if ( $this->should_convert_to_webp( $original_mime_type ) ) {
+		if ( $should_convert_to_webp ) {
 			$this->log_debug( "WebP conversion completed successfully. Final file: " . $response['file'] . ", mime-type: " . $response['mime-type'] );
 		}
 
