@@ -88,6 +88,17 @@ class Image_Editor_Imagick extends WP_Image_Editor_Imagick {
 		 */
 		list( $filename, $extension, $mime_type ) = $this->get_output_format( $filename, $mime_type );
 
+		// Convert PNG, JPG, JPEG to WebP
+		if ( $this->should_convert_to_webp( $mime_type ) ) {
+			$mime_type = 'image/webp';
+			$extension = 'webp';
+			
+			// Update filename to include .webp extension
+			if ( $filename ) {
+				$filename = $this->add_webp_extension( $filename );
+			}
+		}
+
 		if ( ! $filename ) {
 			$filename = $this->generate_filename( null, null, $extension );
 		}
@@ -99,6 +110,12 @@ class Image_Editor_Imagick extends WP_Image_Editor_Imagick {
 			$temp_filename = tempnam( get_temp_dir(), 's3-uploads' );
 		} else {
 			$temp_filename = false;
+		}
+
+		// Convert to WebP if needed
+		if ( $this->should_convert_to_webp( $mime_type ) ) {
+			$image->setImageFormat( 'webp' );
+			$image->setImageCompressionQuality( apply_filters( 's3_uploads_webp_quality', 85 ) );
 		}
 
 		/**
@@ -139,6 +156,83 @@ class Image_Editor_Imagick extends WP_Image_Editor_Imagick {
 		];
 
 		return $response;
+	}
+
+	/**
+	 * Override multi_resize to handle WebP conversion for all image sizes.
+	 *
+	 * @param array $sizes
+	 * @return array|WP_Error
+	 */
+	public function multi_resize( $sizes ) {
+		// First check if we need to convert to WebP
+		$current_mime = $this->mime_type;
+		$should_convert = $this->should_convert_to_webp( $current_mime );
+		
+		if ( $should_convert ) {
+			// Temporarily change the mime type for processing
+			$this->mime_type = 'image/webp';
+		}
+
+		$result = parent::multi_resize( $sizes );
+
+		// Restore original mime type if it was changed
+		if ( $should_convert ) {
+			$this->mime_type = $current_mime;
+			
+			// Update the result array to reflect WebP filenames
+			if ( ! is_wp_error( $result ) && is_array( $result ) ) {
+				foreach ( $result as $size_name => &$size_data ) {
+					if ( isset( $size_data['file'] ) ) {
+						$size_data['file'] = $this->convert_filename_to_webp( $size_data['file'] );
+						$size_data['mime-type'] = 'image/webp';
+					}
+				}
+			}
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Convert a filename to have .webp extension.
+	 *
+	 * @param string $filename
+	 * @return string
+	 */
+	protected function convert_filename_to_webp( string $filename ) : string {
+		$pathinfo = pathinfo( $filename );
+		return $pathinfo['filename'] . '.webp';
+	}
+
+	/**
+	 * Check if the image should be converted to WebP format.
+	 *
+	 * @param string $mime_type
+	 * @return bool
+	 */
+	protected function should_convert_to_webp( string $mime_type ) : bool {
+		$convertible_types = [
+			'image/png',
+			'image/jpeg',
+			'image/jpg'
+		];
+
+		return in_array( $mime_type, $convertible_types, true );
+	}
+
+	/**
+	 * Add .webp extension to filename.
+	 *
+	 * @param string $filename
+	 * @return string
+	 */
+	protected function add_webp_extension( string $filename ) : string {
+		$pathinfo = pathinfo( $filename );
+		$directory = isset( $pathinfo['dirname'] ) && $pathinfo['dirname'] !== '.' ? $pathinfo['dirname'] . '/' : '';
+		$basename = $pathinfo['filename'];
+		
+		return $directory . $basename . '.webp';
 	}
 
 	public function __destruct() {

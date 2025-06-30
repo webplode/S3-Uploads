@@ -119,6 +119,10 @@ class Plugin {
 		add_filter( 'wp_generate_attachment_metadata', [ $this, 'set_attachment_private_on_generate_attachment_metadata' ], 10, 2 );
 
 		add_filter( 'pre_wp_unique_filename_file_list', [ $this, 'get_files_for_unique_filename_file_list' ], 10, 3 );
+		
+		// Enable WebP support
+		add_filter( 'wp_check_filetype_and_ext', [ $this, 'enable_webp_support' ], 10, 4 );
+		add_filter( 'upload_mimes', [ $this, 'add_webp_mime_type' ] );
 	}
 
 	/**
@@ -137,6 +141,10 @@ class Plugin {
 		remove_action( 'wp_calculate_image_srcset', [ $this, 'add_s3_signed_params_to_attachment_image_srcset' ] );
 
 		remove_filter( 'wp_generate_attachment_metadata', [ $this, 'set_attachment_private_on_generate_attachment_metadata' ] );
+		
+		// Remove WebP support filters
+		remove_filter( 'wp_check_filetype_and_ext', [ $this, 'enable_webp_support' ] );
+		remove_filter( 'upload_mimes', [ $this, 'add_webp_mime_type' ] );
 	}
 
 	/**
@@ -687,5 +695,36 @@ class Plugin {
 			$scandir = []; // Set as empty array for return
 		}
 		return $scandir;
+	}
+
+	/**
+	 * Enable WebP file type support.
+	 *
+	 * @param array $data
+	 * @param string $file
+	 * @param string $filename
+	 * @param array $mimes
+	 * @return array
+	 */
+	public function enable_webp_support( array $data, string $file, string $filename, array $mimes ) : array {
+		$filetype = wp_check_filetype( $filename, $mimes );
+
+		if ( 'webp' === $filetype['ext'] ) {
+			$data['ext'] = 'webp';
+			$data['type'] = 'image/webp';
+		}
+
+		return $data;
+	}
+
+	/**
+	 * Add WebP to allowed MIME types.
+	 *
+	 * @param array $mimes
+	 * @return array
+	 */
+	public function add_webp_mime_type( array $mimes ) : array {
+		$mimes['webp'] = 'image/webp';
+		return $mimes;
 	}
 }
