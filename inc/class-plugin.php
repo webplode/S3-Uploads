@@ -808,10 +808,10 @@ class Plugin {
 	 * Intercept original image uploads and convert to WebP before S3 upload
 	 *
 	 * @param array $upload
-	 * @param array $context
+	 * @param string $context
 	 * @return array
 	 */
-	public function intercept_original_image_upload( array $upload, array $context ) {
+	public function intercept_original_image_upload( array $upload, string $context ) {
 		if ( isset( $upload['error'] ) || ! isset( $upload['file'] ) ) {
 			return $upload;
 		}
