@@ -4,7 +4,7 @@
 Plugin Name: S3 Uploads
 Description: Store uploads in S3 with automatic WebP conversion for PNG/JPG/JPEG images
 Author: Human Made Limited
-Version: 1.1.2-webp
+Version: 1.1.3-webp
 Author URI: https://hmn.md
 */
 

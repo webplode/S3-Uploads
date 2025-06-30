@@ -1,3 +1,57 @@
+# 🚀 MUST HAVE Configuration (WebP Enhanced Version)
+
+## ⚠️ IMPORTANT: Add these configurations BEFORE using the plugin!
+
+### 📁 Add to functions.php file in theme editor
+
+```php
+function tw_s3_uploads_s3_client_params( $params ) {
+    $params["endpoint"] = S3_UPLOADS_ENDPOINT;
+    $params["use_path_style_endpoint"] = true;
+    return $params;
+}
+
+add_filter( "s3_uploads_s3_client_params", "tw_s3_uploads_s3_client_params");
+```
+
+### ⚙️ Add to wp-config.php
+
+```php
+require_once __DIR__ . '/vendor/autoload.php';
+
+define("S3_UPLOADS_DISABLE_REPLACE_UPLOAD_URL", true );
+define("S3_UPLOADS_ENDPOINT", "https://52f4aa07903b661f2425a74c1291016d.r2.cloudflarestorage.com");
+define("S3_UPLOADS_BUCKET", "gia-hanoi");
+define("S3_UPLOADS_BUCKET_URL", "https://static.gia-hanoi.com");
+define("S3_UPLOADS_REGION", "auto");
+define("S3_UPLOADS_KEY", "");
+define("S3_UPLOADS_SECRET", "");
+```
+
+## 🎨 WebP Enhanced Features
+
+This enhanced version of S3 Uploads includes automatic WebP conversion with the following features:
+
+- ✅ **Automatic WebP Conversion**: PNG, JPG, and JPEG images are automatically converted to WebP format
+- ✅ **WebP-Only S3 Storage**: Only optimized WebP versions are uploaded to S3 (saves storage costs)
+- ✅ **Automatic .htaccess Generation**: Creates redirect rules in wp-content/uploads/ for seamless CDN delivery
+- ✅ **Filename Preservation**: Converts `image.jpg` to `image.jpg.webp` (preserves original format info)
+- ✅ **Quality Control**: Configurable WebP quality (default: 85%)
+- ✅ **Debug Logging**: Comprehensive logging when WP_DEBUG is enabled
+- ✅ **Fallback Support**: Falls back to original upload if WebP conversion fails
+
+### 🔧 WebP Quality Configuration
+
+You can adjust the WebP compression quality by adding this to your theme's functions.php:
+
+```php
+add_filter( 's3_uploads_webp_quality', function( $quality ) {
+    return 90; // Adjust quality (1-100, default: 85)
+});
+```
+
+---
+
 <table width="100%">
 	<tr>
 		<td align="left" width="70">
