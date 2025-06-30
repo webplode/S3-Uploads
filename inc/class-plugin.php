@@ -898,11 +898,18 @@ class Plugin {
 		$file_name = basename( $upload_data['file'] );
 		$temp_file_path = $full_temp_dir . '/' . $file_name;
 		
-		// Move file to temp directory
-		$move_result = rename( $original_file_path, $temp_file_path );
+		// Copy file to temp directory (use copy + unlink instead of rename for cross-wrapper compatibility)
+		$copy_result = copy( $original_file_path, $temp_file_path );
 		
-		if ( ! $move_result ) {
-			return new WP_Error( 'temp_move_failed', 'Failed to move original file to temp directory' );
+		if ( ! $copy_result ) {
+			return new WP_Error( 'temp_copy_failed', 'Failed to copy original file to temp directory' );
+		}
+		
+		// Remove original file after successful copy
+		$unlink_result = unlink( $original_file_path );
+		
+		if ( ! $unlink_result ) {
+			error_log( '[S3-Uploads WebP] Warning: Failed to remove original file after copy: ' . $original_file_path );
 		}
 		
 		error_log( '[S3-Uploads WebP] Moved original to temp: ' . $temp_file_path );
