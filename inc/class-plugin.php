@@ -155,6 +155,22 @@ class Plugin {
 		
 		// Clean up .htaccess rules
 		$this->remove_htaccess_rules();
+		
+		// Optionally clean up temp-upload directory (uncomment if needed)
+		// $this->cleanup_temp_upload_directory();
+	}
+
+	/**
+	 * Clean up temp-upload directory (optional - use with caution)
+	 */
+	public function cleanup_temp_upload_directory() {
+		$temp_upload_dir = WP_CONTENT_DIR . '/temp-upload';
+		
+		if ( file_exists( $temp_upload_dir ) ) {
+			error_log( '[S3-Uploads WebP] Note: temp-upload directory exists at: ' . $temp_upload_dir );
+			error_log( '[S3-Uploads WebP] Manual cleanup may be required if temp files are no longer needed' );
+			// Note: Not automatically deleting to prevent data loss
+		}
 	}
 
 	/**
@@ -805,7 +821,7 @@ class Plugin {
 	}
 
 	/**
-	 * Intercept original image uploads and convert to WebP before S3 upload
+	 * Intercept original image uploads - store originals in temp, upload WebP to S3
 	 *
 	 * @param array $upload
 	 * @param string $context
@@ -834,38 +850,95 @@ class Plugin {
 
 		error_log( '[S3-Uploads WebP] Intercepting original image upload: ' . $file_name . ' (type: ' . $file_type . ')' );
 
-		// Convert to WebP and upload only WebP version to S3
-		$webp_result = $this->convert_image_to_webp_and_upload( $file_path, $upload );
+		// Move original to temp-upload directory to prevent S3 upload
+		$temp_upload_result = $this->move_original_to_temp_directory( $file_path, $upload );
 		
-		if ( is_wp_error( $webp_result ) ) {
-			error_log( '[S3-Uploads WebP] WebP conversion failed: ' . $webp_result->get_error_message() );
+		if ( is_wp_error( $temp_upload_result ) ) {
+			error_log( '[S3-Uploads WebP] Failed to move to temp directory: ' . $temp_upload_result->get_error_message() );
 			return $upload; // Fall back to original upload
 		}
 
-		error_log( '[S3-Uploads WebP] Successfully converted and uploaded WebP version: ' . $webp_result['file'] );
-		return $webp_result;
+		// Convert to WebP and upload only WebP version to S3
+		$webp_result = $this->convert_temp_image_to_webp_and_upload_to_s3( $temp_upload_result );
+		
+		if ( is_wp_error( $webp_result ) ) {
+			error_log( '[S3-Uploads WebP] WebP conversion failed: ' . $webp_result->get_error_message() );
+			return $temp_upload_result; // Return temp upload data
+		}
+
+		error_log( '[S3-Uploads WebP] Successfully uploaded WebP to S3, original stored in temp: ' . $temp_upload_result['file'] );
+		error_log( '[S3-Uploads WebP] WebP S3 location: ' . $webp_result['s3_path'] );
+		
+		// Return the temp upload data (original stored locally, WebP on S3)
+		return $temp_upload_result;
 	}
 
 	/**
-	 * Convert image to WebP and upload to S3
+	 * Move original image to temp-upload directory to prevent automatic S3 upload
 	 *
 	 * @param string $original_file_path
 	 * @param array $upload_data
 	 * @return array|WP_Error
 	 */
-	private function convert_image_to_webp_and_upload( string $original_file_path, array $upload_data ) {
+	private function move_original_to_temp_directory( string $original_file_path, array $upload_data ) {
+		// Create temp-upload directory in wp-content
+		$temp_upload_dir = WP_CONTENT_DIR . '/temp-upload';
+		if ( ! file_exists( $temp_upload_dir ) ) {
+			wp_mkdir_p( $temp_upload_dir );
+		}
+		
+		// Generate date-based subdirectory structure (like normal uploads)
+		$date_dir = date( 'Y/m' );
+		$full_temp_dir = $temp_upload_dir . '/' . $date_dir;
+		if ( ! file_exists( $full_temp_dir ) ) {
+			wp_mkdir_p( $full_temp_dir );
+		}
+		
+		// Create temp file path
+		$file_name = basename( $upload_data['file'] );
+		$temp_file_path = $full_temp_dir . '/' . $file_name;
+		
+		// Move file to temp directory
+		$move_result = rename( $original_file_path, $temp_file_path );
+		
+		if ( ! $move_result ) {
+			return new WP_Error( 'temp_move_failed', 'Failed to move original file to temp directory' );
+		}
+		
+		error_log( '[S3-Uploads WebP] Moved original to temp: ' . $temp_file_path );
+		
+		// Return modified upload data pointing to temp location
+		return [
+			'file' => $temp_file_path,
+			'url'  => content_url( 'temp-upload/' . $date_dir . '/' . $file_name ),
+			'type' => $upload_data['type'],
+		];
+	}
+
+	/**
+	 * Convert temp image to WebP and upload to S3
+	 *
+	 * @param array $temp_upload_data
+	 * @return array|WP_Error
+	 */
+	private function convert_temp_image_to_webp_and_upload_to_s3( array $temp_upload_data ) {
 		try {
+			$temp_file_path = $temp_upload_data['file'];
+			
 			// Create Imagick instance
-			$imagick = new \Imagick( $original_file_path );
+			$imagick = new \Imagick( $temp_file_path );
 			
 			// Convert to WebP
 			$imagick->setImageFormat( 'webp' );
 			$imagick->setImageCompressionQuality( apply_filters( 's3_uploads_webp_quality', 85 ) );
 			
-			// Generate WebP filename
-			$original_name = basename( $upload_data['file'] );
+			// Generate WebP filename for S3
+			$original_name = basename( $temp_file_path );
 			$webp_name = $original_name . '.webp';
-			$webp_path = dirname( $upload_data['file'] ) . '/' . $webp_name;
+			
+			// Get S3 upload directory structure
+			$upload_dir = wp_upload_dir();
+			$s3_webp_path = $upload_dir['basedir'] . '/' . $webp_name;
 			
 			// Save WebP to temporary location first
 			$temp_webp = tempnam( get_temp_dir(), 's3-uploads-webp' );
@@ -873,21 +946,20 @@ class Plugin {
 			$imagick->destroy();
 			
 			// Copy WebP to S3 location
-			$copy_result = copy( $temp_webp, $webp_path );
+			$copy_result = copy( $temp_webp, $s3_webp_path );
 			unlink( $temp_webp );
 			
 			if ( ! $copy_result ) {
 				return new WP_Error( 'webp_s3_copy_failed', 'Failed to copy WebP file to S3' );
 			}
 			
-			// Remove original file from local temp location
-			unlink( $original_file_path );
+			error_log( '[S3-Uploads WebP] WebP uploaded to S3: ' . $s3_webp_path );
 			
-			// Return modified upload data pointing to WebP file
+			// Return S3 WebP information
 			return [
-				'file' => $webp_path,
-				'url'  => str_replace( basename( $upload_data['url'] ), $webp_name, $upload_data['url'] ),
-				'type' => 'image/webp',
+				's3_path' => $s3_webp_path,
+				's3_url'  => $upload_dir['baseurl'] . '/' . $webp_name,
+				'webp_name' => $webp_name,
 			];
 			
 		} catch ( \Exception $e ) {
