@@ -232,14 +232,13 @@ class Image_Editor_Imagick extends WP_Image_Editor_Imagick {
 	}
 
 	/**
-	 * Convert a filename to have .webp extension.
+	 * Convert a filename to have .webp extension appended.
 	 *
 	 * @param string $filename
 	 * @return string
 	 */
 	protected function convert_filename_to_webp( string $filename ) : string {
-		$pathinfo = pathinfo( $filename );
-		return $pathinfo['filename'] . '.webp';
+		return $filename . '.webp';
 	}
 
 	/**
@@ -262,17 +261,13 @@ class Image_Editor_Imagick extends WP_Image_Editor_Imagick {
 	}
 
 	/**
-	 * Add .webp extension to filename.
+	 * Add .webp extension to filename (appends to existing extension).
 	 *
 	 * @param string $filename
 	 * @return string
 	 */
 	protected function add_webp_extension( string $filename ) : string {
-		$pathinfo = pathinfo( $filename );
-		$directory = isset( $pathinfo['dirname'] ) && $pathinfo['dirname'] !== '.' ? $pathinfo['dirname'] . '/' : '';
-		$basename = $pathinfo['filename'];
-		
-		return $directory . $basename . '.webp';
+		return $filename . '.webp';
 	}
 
 	/**
