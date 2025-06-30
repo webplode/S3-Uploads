@@ -703,10 +703,10 @@ class Plugin {
 	 * @param array $data
 	 * @param string $file
 	 * @param string $filename
-	 * @param array $mimes
+	 * @param array|null $mimes
 	 * @return array
 	 */
-	public function enable_webp_support( array $data, string $file, string $filename, array $mimes ) : array {
+	public function enable_webp_support( array $data, string $file, string $filename, ?array $mimes ) : array {
 		$filetype = wp_check_filetype( $filename, $mimes );
 
 		if ( 'webp' === $filetype['ext'] ) {
