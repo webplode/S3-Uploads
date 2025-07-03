@@ -758,6 +758,8 @@ class Plugin {
 		$htaccess_content .= "RewriteRule ^(.*)\\.jpg$ {$cdn_url}/uploads/\$1.jpg.webp [R=301,L]\n";
 		$htaccess_content .= "RewriteRule ^(.*)\\.jpeg$ {$cdn_url}/uploads/\$1.jpeg.webp [R=301,L]\n";
 		$htaccess_content .= "RewriteRule ^(.*)\\.png$ {$cdn_url}/uploads/\$1.png.webp [R=301,L]\n\n";
+		$htaccess_content .= "# Exclude common font types from redirection\n";
+		$htaccess_content .= "RewriteCond %{REQUEST_URI} !\\.(?:ttf|otf|woff|woff2|eot|svg)$ [NC]\n";
 		$htaccess_content .= "# Redirect all other files to CDN without .webp\n";
 		$htaccess_content .= "RewriteRule ^(.*)$ {$cdn_url}/uploads/\$1 [R=301,L]\n";
 		
