@@ -40,13 +40,6 @@ class Plugin {
 	private $secret;
 
 	/**
-	 * Flag to indicate a font is being uploaded to prevent S3 offload.
-	 *
-	 * @var bool
-	 */
-	private $is_font_upload = false;
-
-	/**
 	 * Original wp_upload_dir() before being replaced by S3 Uploads.
 	 *
 	 * @var ?array{path: string, basedir: string, baseurl: string, url: string}
@@ -134,9 +127,6 @@ class Plugin {
 		// Intercept file uploads BEFORE they get moved to S3
 		add_filter( 'wp_handle_upload_prefilter', [ $this, 'convert_original_to_webp_prefilter' ] );
 		
-		// Reset font upload flag after upload is complete.
-		add_filter( 'wp_handle_upload', [ $this, 'reset_font_upload_flag' ] );
-		
 		// Generate .htaccess rules for WebP redirection
 		$this->generate_htaccess_rules();
 	}
@@ -162,9 +152,6 @@ class Plugin {
 		remove_filter( 'wp_check_filetype_and_ext', [ $this, 'enable_webp_support' ] );
 		remove_filter( 'upload_mimes', [ $this, 'add_webp_mime_type' ] );
 		remove_filter( 'wp_handle_upload_prefilter', [ $this, 'convert_original_to_webp_prefilter' ] );
-		
-		// Reset font upload flag after upload is complete.
-		remove_filter( 'wp_handle_upload', [ $this, 'reset_font_upload_flag' ] );
 		
 		// Clean up .htaccess rules
 		$this->remove_htaccess_rules();
@@ -199,16 +186,8 @@ class Plugin {
 	 * @return array{path: string, basedir: string, baseurl: string, url: string}
 	 */
 	public function filter_upload_dir( array $dirs ) : array {
-		// Store the unmodified upload dir array on the first run.
-		if ( empty( $this->original_upload_dir ) ) {
-			$this->original_upload_dir = $dirs;
-		}
 
-		// If a font is being uploaded, return the original local paths.
-		if ( $this->is_font_upload ) {
-			return $dirs;
-		}
-
+		$this->original_upload_dir = $dirs;
 		$s3_path = $this->get_s3_path();
 
 		$dirs['path']    = str_replace( WP_CONTENT_DIR, $s3_path, $dirs['path'] );
@@ -839,27 +818,14 @@ class Plugin {
 			return $file;
 		}
 
-		if ( ! isset( $file['tmp_name'] ) ) {
+		if ( ! isset( $file['tmp_name'] ) || ! isset( $file['type'] ) ) {
 			return $file;
 		}
 
-		$file_info = pathinfo( $file['name'] );
-		$extension = strtolower( $file_info['extension'] ?? '' );
-		$font_extensions = [ 'ttf', 'otf', 'woff', 'woff2', 'eot', 'svg' ];
-
-		if ( in_array( $extension, $font_extensions, true ) ) {
-			error_log( '[S3-Uploads] Font file detected, keeping on local server: ' . $file['name'] );
-			$this->is_font_upload = true;
-			return $file;
-		}
-
-		// For all other files, ensure the flag is false so they go to S3.
-		$this->is_font_upload = false;
-
-		$file_type = $file['type'] ?? '';
+		$file_type = $file['type'];
 		$original_name = $file['name'];
 
-		// Check if this is a convertible image type
+		// Check if this is a convertible image type  
 		$convertible_types = [
 			'image/png',
 			'image/jpeg',
@@ -906,16 +872,5 @@ class Plugin {
 		}
 
 		return $file;
-	}
-
-	/**
-	 * Reset the font upload flag after an upload has been handled.
-	 *
-	 * @param array $fileinfo
-	 * @return array
-	 */
-	public function reset_font_upload_flag( array $fileinfo ) : array {
-		$this->is_font_upload = false;
-		return $fileinfo;
 	}
 }
