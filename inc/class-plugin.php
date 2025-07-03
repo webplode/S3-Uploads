@@ -127,6 +127,9 @@ class Plugin {
 		// Intercept file uploads BEFORE they get moved to S3
 		add_filter( 'wp_handle_upload_prefilter', [ $this, 'convert_original_to_webp_prefilter' ] );
 		
+		// After a file is uploaded to S3, check if it's a font and copy it back locally.
+		add_filter( 'wp_handle_upload', [ $this, 'maybe_keep_local_copy_for_fonts' ], 10, 2 );
+		
 		// Generate .htaccess rules for WebP redirection
 		$this->generate_htaccess_rules();
 	}
@@ -152,6 +155,9 @@ class Plugin {
 		remove_filter( 'wp_check_filetype_and_ext', [ $this, 'enable_webp_support' ] );
 		remove_filter( 'upload_mimes', [ $this, 'add_webp_mime_type' ] );
 		remove_filter( 'wp_handle_upload_prefilter', [ $this, 'convert_original_to_webp_prefilter' ] );
+		
+		// Remove the hook for keeping local copies of fonts.
+		remove_filter( 'wp_handle_upload', [ $this, 'maybe_keep_local_copy_for_fonts' ] );
 		
 		// Clean up .htaccess rules
 		$this->remove_htaccess_rules();
@@ -872,5 +878,46 @@ class Plugin {
 		}
 
 		return $file;
+	}
+
+	/**
+	 * After a file is uploaded to S3, check if it's a font and copy it back to the local server.
+	 *
+	 * @param array  $upload
+	 * @param string $context
+	 * @return array
+	 */
+	public function maybe_keep_local_copy_for_fonts( array $upload, string $context ) : array {
+		if ( isset( $upload['error'] ) ) {
+			return $upload;
+		}
+
+		$file_path = $upload['file'];
+		$file_info = pathinfo( $file_path );
+		$extension = strtolower( $file_info['extension'] ?? '' );
+		$font_extensions = [ 'ttf', 'otf', 'woff', 'woff2', 'eot', 'svg' ];
+
+		if ( in_array( $extension, $font_extensions, true ) ) {
+			$s3_upload_dir = wp_upload_dir();
+			$s3_basedir    = $s3_upload_dir['basedir'];
+
+			$original_upload_dir = $this->get_original_upload_dir();
+			$local_basedir       = $original_upload_dir['basedir'];
+
+			$local_file_path = str_replace( $s3_basedir, $local_basedir, $file_path );
+
+			// Ensure the local directory exists before copying.
+			wp_mkdir_p( dirname( $local_file_path ) );
+
+			$copy_result = copy( $file_path, $local_file_path );
+
+			if ( $copy_result ) {
+				error_log( '[S3-Uploads] Font file uploaded to S3 and also kept on local server: ' . $local_file_path );
+			} else {
+				error_log( '[S3-Uploads] Failed to copy font file from S3 to local server: ' . $local_file_path );
+			}
+		}
+
+		return $upload;
 	}
 }
