@@ -171,3 +171,23 @@ function move_temp_personal_data_to_s3( string $archive_pathname ) {
 	copy( $archive_pathname, $destination );
 	unlink( $archive_pathname );
 }
+
+/**
+ * Plugin deactivation handler - cleanup .htaccess file
+ */
+function deactivate_plugin() {
+	// Only cleanup if we have the required constants defined
+	if ( ! defined( 'S3_UPLOADS_BUCKET' ) ) {
+		return;
+	}
+
+	try {
+		// Get plugin instance and cleanup .htaccess rules
+		$instance = Plugin::get_instance();
+		$instance->remove_htaccess_rules();
+		
+		error_log( '[S3-Uploads WebP] Plugin deactivated - cleaned up .htaccess rules' );
+	} catch ( Exception $e ) {
+		error_log( '[S3-Uploads WebP] Error during plugin deactivation cleanup: ' . $e->getMessage() );
+	}
+}
