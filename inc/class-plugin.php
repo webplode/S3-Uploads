@@ -1281,7 +1281,7 @@ class Plugin {
 				<p><strong>S3 Region:</strong> <?php echo esc_html( $region ); ?></p>
 				<p><strong>S3 Endpoint:</strong> <?php echo esc_html( $endpoint ); ?></p>
 				<p><strong>CDN URL:</strong> <?php echo esc_html( $bucket_url ); ?></p>
-				<p><strong>Plugin Version:</strong> 1.2.0-webp</p>
+				<p><strong>Plugin Version:</strong> 1.3.0-webp</p>
 				<p><strong>WebP Quality:</strong> <?php echo esc_html( get_option( 's3_uploads_webp_quality', 85 ) ); ?>%</p>
 			</div>
 		</div>
