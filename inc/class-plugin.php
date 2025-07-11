@@ -1017,7 +1017,7 @@ class Plugin {
 				<p><strong>S3 Bucket:</strong> <?php echo esc_html( $this->bucket ); ?></p>
 				<p><strong>S3 Region:</strong> <?php echo esc_html( $this->region ?: 'Default' ); ?></p>
 				<p><strong>CDN URL:</strong> <?php echo esc_html( $this->get_s3_url() ); ?></p>
-				<p><strong>Plugin Version:</strong> 1.1.9-webp</p>
+				<p><strong>Plugin Version:</strong> 1.2.0-webp</p>
 			</div>
 		</div>
 		
