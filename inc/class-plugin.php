@@ -68,13 +68,14 @@ class Plugin {
 	public static function get_instance() {
 
 		if ( ! self::$instance ) {
-			self::$instance = new static(
-				S3_UPLOADS_BUCKET,
-				defined( 'S3_UPLOADS_KEY' ) ? S3_UPLOADS_KEY : null,
-				defined( 'S3_UPLOADS_SECRET' ) ? S3_UPLOADS_SECRET : null,
-				defined( 'S3_UPLOADS_BUCKET_URL' ) ? S3_UPLOADS_BUCKET_URL : null,
-				S3_UPLOADS_REGION
-			);
+			// Read from options first, then fallback to constants
+			$bucket = get_option( 's3_uploads_bucket' ) ?: ( defined( 'S3_UPLOADS_BUCKET' ) ? S3_UPLOADS_BUCKET : '' );
+			$key = get_option( 's3_uploads_key' ) ?: ( defined( 'S3_UPLOADS_KEY' ) ? S3_UPLOADS_KEY : null );
+			$secret = get_option( 's3_uploads_secret' ) ?: ( defined( 'S3_UPLOADS_SECRET' ) ? S3_UPLOADS_SECRET : null );
+			$bucket_url = get_option( 's3_uploads_bucket_url' ) ?: ( defined( 'S3_UPLOADS_BUCKET_URL' ) ? S3_UPLOADS_BUCKET_URL : null );
+			$region = get_option( 's3_uploads_region' ) ?: ( defined( 'S3_UPLOADS_REGION' ) ? S3_UPLOADS_REGION : 'us-east-1' );
+			
+			self::$instance = new static( $bucket, $key, $secret, $bucket_url, $region );
 		}
 
 		return self::$instance;
@@ -136,6 +137,7 @@ class Plugin {
 		// Add admin interface hooks
 		add_action( 'admin_menu', [ $this, 'add_admin_menu' ] );
 		add_action( 'admin_init', [ $this, 'admin_init' ] );
+		add_action( 'wp_ajax_s3_uploads_test_connection', [ $this, 'ajax_test_connection' ] );
 	}
 
 	/**
@@ -207,7 +209,8 @@ class Plugin {
 		$dirs['path']    = str_replace( WP_CONTENT_DIR, $s3_path, $dirs['path'] );
 		$dirs['basedir'] = str_replace( WP_CONTENT_DIR, $s3_path, $dirs['basedir'] );
 
-		if ( ! defined( 'S3_UPLOADS_DISABLE_REPLACE_UPLOAD_URL' ) || ! S3_UPLOADS_DISABLE_REPLACE_UPLOAD_URL ) {
+		$disable_replace_url = get_option( 's3_uploads_disable_replace_upload_url' ) ?: ( defined( 'S3_UPLOADS_DISABLE_REPLACE_UPLOAD_URL' ) ? S3_UPLOADS_DISABLE_REPLACE_UPLOAD_URL : false );
+		if ( ! $disable_replace_url ) {
 
 			if ( defined( 'S3_UPLOADS_USE_LOCAL' ) && S3_UPLOADS_USE_LOCAL ) {
 				$dirs['url']     = str_replace( $s3_path, $dirs['baseurl'] . '/s3/' . $this->bucket, $dirs['path'] );
@@ -389,6 +392,13 @@ class Plugin {
 		if ( $this->region ) {
 			$params['signature'] = 'v4';
 			$params['region'] = $this->region;
+		}
+
+		// Handle custom endpoint (e.g., Cloudflare R2)
+		$endpoint = get_option( 's3_uploads_endpoint' ) ?: ( defined( 'S3_UPLOADS_ENDPOINT' ) ? S3_UPLOADS_ENDPOINT : null );
+		if ( $endpoint ) {
+			$params['endpoint'] = $endpoint;
+			$params['use_path_style_endpoint'] = true;
 		}
 
 		if ( defined( 'WP_PROXY_HOST' ) && defined( 'WP_PROXY_PORT' ) ) {
@@ -947,12 +957,108 @@ class Plugin {
 	 * Initialize admin settings
 	 */
 	public function admin_init() {
+		// S3 Configuration Settings
+		register_setting( 's3_uploads_settings', 's3_uploads_endpoint', [
+			'type' => 'string',
+			'sanitize_callback' => [ $this, 'sanitize_url' ]
+		] );
+		register_setting( 's3_uploads_settings', 's3_uploads_bucket', [
+			'type' => 'string',
+			'sanitize_callback' => [ $this, 'sanitize_bucket_name' ]
+		] );
+		register_setting( 's3_uploads_settings', 's3_uploads_bucket_url', [
+			'type' => 'string',
+			'sanitize_callback' => [ $this, 'sanitize_url' ]
+		] );
+		register_setting( 's3_uploads_settings', 's3_uploads_region', [
+			'type' => 'string',
+			'sanitize_callback' => 'sanitize_text_field'
+		] );
+		register_setting( 's3_uploads_settings', 's3_uploads_key', [
+			'type' => 'string',
+			'sanitize_callback' => 'sanitize_text_field'
+		] );
+		register_setting( 's3_uploads_settings', 's3_uploads_secret', [
+			'type' => 'string',
+			'sanitize_callback' => 'sanitize_text_field'
+		] );
+		register_setting( 's3_uploads_settings', 's3_uploads_disable_replace_upload_url', [
+			'type' => 'boolean',
+			'default' => false
+		] );
+		
+		// WebP Quality Setting
 		register_setting( 's3_uploads_settings', 's3_uploads_webp_quality', [
 			'type' => 'integer',
 			'default' => 85,
 			'sanitize_callback' => [ $this, 'sanitize_webp_quality' ]
 		] );
 
+		// S3 Configuration Section
+		add_settings_section(
+			's3_uploads_config_section',
+			'S3 Configuration',
+			[ $this, 'config_section_callback' ],
+			's3_uploads_settings'
+		);
+
+		add_settings_field(
+			's3_uploads_endpoint',
+			'S3 Endpoint URL',
+			[ $this, 'endpoint_field_callback' ],
+			's3_uploads_settings',
+			's3_uploads_config_section'
+		);
+
+		add_settings_field(
+			's3_uploads_bucket',
+			'S3 Bucket Name',
+			[ $this, 'bucket_field_callback' ],
+			's3_uploads_settings',
+			's3_uploads_config_section'
+		);
+
+		add_settings_field(
+			's3_uploads_bucket_url',
+			'CDN/Bucket URL',
+			[ $this, 'bucket_url_field_callback' ],
+			's3_uploads_settings',
+			's3_uploads_config_section'
+		);
+
+		add_settings_field(
+			's3_uploads_region',
+			'S3 Region',
+			[ $this, 'region_field_callback' ],
+			's3_uploads_settings',
+			's3_uploads_config_section'
+		);
+
+		add_settings_field(
+			's3_uploads_key',
+			'Access Key ID',
+			[ $this, 'key_field_callback' ],
+			's3_uploads_settings',
+			's3_uploads_config_section'
+		);
+
+		add_settings_field(
+			's3_uploads_secret',
+			'Secret Access Key',
+			[ $this, 'secret_field_callback' ],
+			's3_uploads_settings',
+			's3_uploads_config_section'
+		);
+
+		add_settings_field(
+			's3_uploads_disable_replace_upload_url',
+			'Disable URL Replacement',
+			[ $this, 'disable_replace_url_field_callback' ],
+			's3_uploads_settings',
+			's3_uploads_config_section'
+		);
+
+		// WebP Section
 		add_settings_section(
 			's3_uploads_webp_section',
 			'WebP Conversion Settings',
@@ -978,6 +1084,103 @@ class Plugin {
 	}
 
 	/**
+	 * Sanitize URL values
+	 */
+	public function sanitize_url( $value ) {
+		$value = esc_url_raw( $value );
+		if ( $value && ! filter_var( $value, FILTER_VALIDATE_URL ) ) {
+			add_settings_error( 's3_uploads_messages', 's3_uploads_url_error', 'Invalid URL format provided', 'error' );
+			return '';
+		}
+		return $value;
+	}
+
+	/**
+	 * Sanitize bucket name
+	 */
+	public function sanitize_bucket_name( $value ) {
+		$value = sanitize_text_field( $value );
+		// Basic S3 bucket name validation
+		if ( $value && ! preg_match( '/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/', $value ) ) {
+			add_settings_error( 's3_uploads_messages', 's3_uploads_bucket_error', 'Invalid bucket name. Bucket names must be lowercase and contain only letters, numbers, periods, and hyphens.', 'error' );
+			return '';
+		}
+		return $value;
+	}
+
+	/**
+	 * S3 configuration section description
+	 */
+	public function config_section_callback() {
+		echo '<p>Configure your S3-compatible storage settings. These settings will override any constants defined in wp-config.php.</p>';
+	}
+
+	/**
+	 * Endpoint field callback
+	 */
+	public function endpoint_field_callback() {
+		$value = get_option( 's3_uploads_endpoint', defined( 'S3_UPLOADS_ENDPOINT' ) ? S3_UPLOADS_ENDPOINT : '' );
+		echo '<input type="url" id="s3_uploads_endpoint" name="s3_uploads_endpoint" value="' . esc_attr( $value ) . '" class="regular-text" />';
+		echo '<p class="description">S3-compatible storage endpoint URL (e.g., for Cloudflare R2)</p>';
+	}
+
+	/**
+	 * Bucket field callback
+	 */
+	public function bucket_field_callback() {
+		$value = get_option( 's3_uploads_bucket', defined( 'S3_UPLOADS_BUCKET' ) ? S3_UPLOADS_BUCKET : '' );
+		echo '<input type="text" id="s3_uploads_bucket" name="s3_uploads_bucket" value="' . esc_attr( $value ) . '" class="regular-text" required />';
+		echo '<p class="description">Your S3 bucket name (required)</p>';
+	}
+
+	/**
+	 * Bucket URL field callback
+	 */
+	public function bucket_url_field_callback() {
+		$value = get_option( 's3_uploads_bucket_url', defined( 'S3_UPLOADS_BUCKET_URL' ) ? S3_UPLOADS_BUCKET_URL : '' );
+		echo '<input type="url" id="s3_uploads_bucket_url" name="s3_uploads_bucket_url" value="' . esc_attr( $value ) . '" class="regular-text" />';
+		echo '<p class="description">CDN or public URL for your bucket (optional)</p>';
+	}
+
+	/**
+	 * Region field callback
+	 */
+	public function region_field_callback() {
+		$value = get_option( 's3_uploads_region', defined( 'S3_UPLOADS_REGION' ) ? S3_UPLOADS_REGION : 'us-east-1' );
+		echo '<input type="text" id="s3_uploads_region" name="s3_uploads_region" value="' . esc_attr( $value ) . '" class="regular-text" />';
+		echo '<p class="description">S3 region (e.g., us-east-1, auto for Cloudflare R2)</p>';
+	}
+
+	/**
+	 * Access Key field callback
+	 */
+	public function key_field_callback() {
+		$value = get_option( 's3_uploads_key', defined( 'S3_UPLOADS_KEY' ) ? S3_UPLOADS_KEY : '' );
+		echo '<input type="text" id="s3_uploads_key" name="s3_uploads_key" value="' . esc_attr( $value ) . '" class="regular-text" />';
+		echo '<p class="description">S3 Access Key ID</p>';
+	}
+
+	/**
+	 * Secret Key field callback
+	 */
+	public function secret_field_callback() {
+		$value = get_option( 's3_uploads_secret', defined( 'S3_UPLOADS_SECRET' ) ? S3_UPLOADS_SECRET : '' );
+		$display_value = $value ? str_repeat( '*', 20 ) : '';
+		echo '<input type="password" id="s3_uploads_secret" name="s3_uploads_secret" value="' . esc_attr( $value ) . '" class="regular-text" placeholder="' . esc_attr( $display_value ) . '" />';
+		echo '<p class="description">S3 Secret Access Key (will be hidden after saving)</p>';
+	}
+
+	/**
+	 * Disable URL replacement field callback
+	 */
+	public function disable_replace_url_field_callback() {
+		$value = get_option( 's3_uploads_disable_replace_upload_url', defined( 'S3_UPLOADS_DISABLE_REPLACE_UPLOAD_URL' ) ? S3_UPLOADS_DISABLE_REPLACE_UPLOAD_URL : false );
+		echo '<input type="checkbox" id="s3_uploads_disable_replace_upload_url" name="s3_uploads_disable_replace_upload_url" value="1" ' . checked( 1, $value, false ) . ' />';
+		echo '<label for="s3_uploads_disable_replace_upload_url">Disable automatic URL replacement in content</label>';
+		echo '<p class="description">Check this to keep using local URLs in content while storing files in S3</p>';
+	}
+
+	/**
 	 * WebP section description
 	 */
 	public function webp_section_callback() {
@@ -991,6 +1194,53 @@ class Plugin {
 		$quality = get_option( 's3_uploads_webp_quality', 85 );
 		echo '<input type="number" id="s3_uploads_webp_quality" name="s3_uploads_webp_quality" value="' . esc_attr( $quality ) . '" min="1" max="100" />';
 		echo '<p class="description">WebP compression quality (1-100). Higher values mean better quality but larger file sizes. Default: 85</p>';
+	}
+
+	/**
+	 * AJAX handler for testing S3 connection
+	 */
+	public function ajax_test_connection() {
+		// Check nonce and permissions
+		if ( ! wp_verify_nonce( $_POST['nonce'], 's3_uploads_test_connection' ) || ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Unauthorized' );
+		}
+
+		try {
+			// Get values from form or saved options
+			$bucket = $_POST['bucket'] ?: get_option( 's3_uploads_bucket' );
+			$key = $_POST['key'] ?: get_option( 's3_uploads_key' );
+			$secret = $_POST['secret'] ?: get_option( 's3_uploads_secret' );
+			$region = $_POST['region'] ?: get_option( 's3_uploads_region', 'us-east-1' );
+			$endpoint = $_POST['endpoint'] ?: get_option( 's3_uploads_endpoint' );
+
+			if ( ! $bucket || ! $key || ! $secret ) {
+				wp_send_json_error( 'Missing required credentials (bucket, key, secret)' );
+			}
+
+			// Create temporary S3 client
+			$params = [
+				'version' => 'latest',
+				'region' => $region,
+				'credentials' => [
+					'key' => $key,
+					'secret' => $secret,
+				],
+			];
+
+			if ( $endpoint ) {
+				$params['endpoint'] = $endpoint;
+				$params['use_path_style_endpoint'] = true;
+			}
+
+			$s3 = new \Aws\S3\S3Client( $params );
+
+			// Test connection by listing bucket
+			$result = $s3->headBucket( [ 'Bucket' => $bucket ] );
+			wp_send_json_success( 'Connection successful! Bucket is accessible.' );
+
+		} catch ( Exception $e ) {
+			wp_send_json_error( 'Connection failed: ' . $e->getMessage() );
+		}
 	}
 
 	/**
@@ -1012,12 +1262,27 @@ class Plugin {
 				?>
 			</form>
 			
+			<div class="s3-uploads-test" style="margin-top: 20px; padding: 15px; background: #fff; border: 1px solid #ccd0d4; border-radius: 4px;">
+				<h3>Test S3 Connection</h3>
+				<p>Test your S3 configuration to ensure it's working correctly.</p>
+				<button type="button" id="s3-test-connection" class="button button-secondary">Test Connection</button>
+				<div id="s3-test-result" style="margin-top: 10px;"></div>
+			</div>
+			
 			<div class="s3-uploads-info" style="margin-top: 30px; padding: 15px; background: #f1f1f1; border-left: 4px solid #0073aa;">
-				<h3>Plugin Information</h3>
-				<p><strong>S3 Bucket:</strong> <?php echo esc_html( $this->bucket ); ?></p>
-				<p><strong>S3 Region:</strong> <?php echo esc_html( $this->region ?: 'Default' ); ?></p>
-				<p><strong>CDN URL:</strong> <?php echo esc_html( $this->get_s3_url() ); ?></p>
+				<h3>Current Configuration</h3>
+				<?php
+				$bucket = get_option( 's3_uploads_bucket' ) ?: ( defined( 'S3_UPLOADS_BUCKET' ) ? S3_UPLOADS_BUCKET : 'Not set' );
+				$region = get_option( 's3_uploads_region' ) ?: ( defined( 'S3_UPLOADS_REGION' ) ? S3_UPLOADS_REGION : 'us-east-1' );
+				$endpoint = get_option( 's3_uploads_endpoint' ) ?: ( defined( 'S3_UPLOADS_ENDPOINT' ) ? S3_UPLOADS_ENDPOINT : 'Default AWS' );
+				$bucket_url = get_option( 's3_uploads_bucket_url' ) ?: ( defined( 'S3_UPLOADS_BUCKET_URL' ) ? S3_UPLOADS_BUCKET_URL : 'Auto-generated' );
+				?>
+				<p><strong>S3 Bucket:</strong> <?php echo esc_html( $bucket ); ?></p>
+				<p><strong>S3 Region:</strong> <?php echo esc_html( $region ); ?></p>
+				<p><strong>S3 Endpoint:</strong> <?php echo esc_html( $endpoint ); ?></p>
+				<p><strong>CDN URL:</strong> <?php echo esc_html( $bucket_url ); ?></p>
 				<p><strong>Plugin Version:</strong> 1.2.0-webp</p>
+				<p><strong>WebP Quality:</strong> <?php echo esc_html( get_option( 's3_uploads_webp_quality', 85 ) ); ?>%</p>
 			</div>
 		</div>
 		
@@ -1025,7 +1290,7 @@ class Plugin {
 		.s3-uploads-info {
 			border-radius: 4px;
 		}
-		.s3-uploads-info h3 {
+		.s3-uploads-info h3, .s3-uploads-test h3 {
 			margin-top: 0;
 			color: #0073aa;
 		}
@@ -1049,7 +1314,50 @@ class Plugin {
 			border-radius: 4px;
 			margin-bottom: 20px;
 		}
+		.s3-test-success {
+			color: #00a32a;
+			font-weight: bold;
+		}
+		.s3-test-error {
+			color: #d63638;
+			font-weight: bold;
+		}
 		</style>
+		
+		<script>
+		jQuery(document).ready(function($) {
+			$('#s3-test-connection').click(function() {
+				var button = $(this);
+				var resultDiv = $('#s3-test-result');
+				
+				button.prop('disabled', true).text('Testing...');
+				resultDiv.html('');
+				
+				var data = {
+					action: 's3_uploads_test_connection',
+					nonce: '<?php echo wp_create_nonce( 's3_uploads_test_connection' ); ?>',
+					bucket: $('#s3_uploads_bucket').val(),
+					key: $('#s3_uploads_key').val(),
+					secret: $('#s3_uploads_secret').val(),
+					region: $('#s3_uploads_region').val(),
+					endpoint: $('#s3_uploads_endpoint').val()
+				};
+				
+				$.post(ajaxurl, data, function(response) {
+					button.prop('disabled', false).text('Test Connection');
+					
+					if (response.success) {
+						resultDiv.html('<span class="s3-test-success">✓ ' + response.data + '</span>');
+					} else {
+						resultDiv.html('<span class="s3-test-error">✗ ' + response.data + '</span>');
+					}
+				}).fail(function() {
+					button.prop('disabled', false).text('Test Connection');
+					resultDiv.html('<span class="s3-test-error">✗ Test failed - unable to connect</span>');
+				});
+			});
+		});
+		</script>
 		<?php
 	}
 }

@@ -13,11 +13,16 @@ function init() {
 		return;
 	}
 
-	if ( ! defined( 'S3_UPLOADS_BUCKET' ) ) {
+	// Check for bucket from options or constants
+	$bucket = get_option( 's3_uploads_bucket' ) ?: ( defined( 'S3_UPLOADS_BUCKET' ) ? S3_UPLOADS_BUCKET : '' );
+	if ( ! $bucket ) {
 		return;
 	}
 
-	if ( ( ! defined( 'S3_UPLOADS_KEY' ) || ! defined( 'S3_UPLOADS_SECRET' ) ) && ! defined( 'S3_UPLOADS_USE_INSTANCE_PROFILE' ) ) {
+	// Check for credentials from options or constants
+	$key = get_option( 's3_uploads_key' ) ?: ( defined( 'S3_UPLOADS_KEY' ) ? S3_UPLOADS_KEY : '' );
+	$secret = get_option( 's3_uploads_secret' ) ?: ( defined( 'S3_UPLOADS_SECRET' ) ? S3_UPLOADS_SECRET : '' );
+	if ( ( ! $key || ! $secret ) && ! defined( 'S3_UPLOADS_USE_INSTANCE_PROFILE' ) ) {
 		return;
 	}
 
@@ -25,8 +30,10 @@ function init() {
 		return;
 	}
 
-	if ( ! defined( 'S3_UPLOADS_REGION' ) ) {
-		wp_die( 'S3_UPLOADS_REGION constant is required. Please define it in your wp-config.php' );
+	// Check for region from options or constants  
+	$region = get_option( 's3_uploads_region' ) ?: ( defined( 'S3_UPLOADS_REGION' ) ? S3_UPLOADS_REGION : '' );
+	if ( ! $region ) {
+		wp_die( 'S3 Region is required. Please configure it in Settings > S3 Uploads or define S3_UPLOADS_REGION in your wp-config.php' );
 	}
 
 	if ( defined( 'WP_CLI' ) && WP_CLI ) {
@@ -176,8 +183,9 @@ function move_temp_personal_data_to_s3( string $archive_pathname ) {
  * Plugin deactivation handler - cleanup .htaccess file
  */
 function deactivate_plugin() {
-	// Only cleanup if we have the required constants defined
-	if ( ! defined( 'S3_UPLOADS_BUCKET' ) ) {
+	// Only cleanup if we have bucket configured (from options or constants)
+	$bucket = get_option( 's3_uploads_bucket' ) ?: ( defined( 'S3_UPLOADS_BUCKET' ) ? S3_UPLOADS_BUCKET : '' );
+	if ( ! $bucket ) {
 		return;
 	}
 
