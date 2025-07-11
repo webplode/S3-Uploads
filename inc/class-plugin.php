@@ -132,6 +132,10 @@ class Plugin {
 		
 		// Generate .htaccess rules for WebP redirection
 		$this->generate_htaccess_rules();
+		
+		// Add admin interface hooks
+		add_action( 'admin_menu', [ $this, 'add_admin_menu' ] );
+		add_action( 'admin_init', [ $this, 'admin_init' ] );
 	}
 
 	/**
@@ -161,6 +165,10 @@ class Plugin {
 		
 		// Clean up .htaccess rules
 		$this->remove_htaccess_rules();
+		
+		// Remove admin interface hooks
+		remove_action( 'admin_menu', [ $this, 'add_admin_menu' ] );
+		remove_action( 'admin_init', [ $this, 'admin_init' ] );
 	}
 
 	/**
@@ -851,7 +859,8 @@ class Plugin {
 			
 			// Convert to WebP format
 			$imagick->setImageFormat( 'webp' );
-			$imagick->setImageCompressionQuality( apply_filters( 's3_uploads_webp_quality', 85 ) );
+			$quality = get_option( 's3_uploads_webp_quality', 85 );
+			$imagick->setImageCompressionQuality( $quality );
 			
 			// Create new temporary file for WebP
 			$webp_tmp = tempnam( get_temp_dir(), 's3-uploads-webp' );
@@ -919,5 +928,128 @@ class Plugin {
 		}
 
 		return $upload;
+	}
+
+	/**
+	 * Add admin menu for S3 Uploads settings
+	 */
+	public function add_admin_menu() {
+		add_options_page(
+			'S3 Uploads Settings',
+			'S3 Uploads',
+			'manage_options',
+			's3-uploads-settings',
+			[ $this, 'settings_page' ]
+		);
+	}
+
+	/**
+	 * Initialize admin settings
+	 */
+	public function admin_init() {
+		register_setting( 's3_uploads_settings', 's3_uploads_webp_quality', [
+			'type' => 'integer',
+			'default' => 85,
+			'sanitize_callback' => [ $this, 'sanitize_webp_quality' ]
+		] );
+
+		add_settings_section(
+			's3_uploads_webp_section',
+			'WebP Conversion Settings',
+			[ $this, 'webp_section_callback' ],
+			's3_uploads_settings'
+		);
+
+		add_settings_field(
+			's3_uploads_webp_quality',
+			'WebP Quality',
+			[ $this, 'webp_quality_field_callback' ],
+			's3_uploads_settings',
+			's3_uploads_webp_section'
+		);
+	}
+
+	/**
+	 * Sanitize WebP quality value
+	 */
+	public function sanitize_webp_quality( $value ) {
+		$value = intval( $value );
+		return max( 1, min( 100, $value ) );
+	}
+
+	/**
+	 * WebP section description
+	 */
+	public function webp_section_callback() {
+		echo '<p>Configure WebP conversion settings for your S3 uploads. All uploaded PNG and JPEG images will be automatically converted to WebP format for better compression and faster loading times.</p>';
+	}
+
+	/**
+	 * WebP quality field callback
+	 */
+	public function webp_quality_field_callback() {
+		$quality = get_option( 's3_uploads_webp_quality', 85 );
+		echo '<input type="number" id="s3_uploads_webp_quality" name="s3_uploads_webp_quality" value="' . esc_attr( $quality ) . '" min="1" max="100" />';
+		echo '<p class="description">WebP compression quality (1-100). Higher values mean better quality but larger file sizes. Default: 85</p>';
+	}
+
+	/**
+	 * Settings page HTML
+	 */
+	public function settings_page() {
+		if ( isset( $_GET['settings-updated'] ) ) {
+			add_settings_error( 's3_uploads_messages', 's3_uploads_message', 'Settings Saved', 'updated' );
+		}
+		settings_errors( 's3_uploads_messages' );
+		?>
+		<div class="wrap">
+			<h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
+			<form action="options.php" method="post">
+				<?php
+				settings_fields( 's3_uploads_settings' );
+				do_settings_sections( 's3_uploads_settings' );
+				submit_button( 'Save Settings' );
+				?>
+			</form>
+			
+			<div class="s3-uploads-info" style="margin-top: 30px; padding: 15px; background: #f1f1f1; border-left: 4px solid #0073aa;">
+				<h3>Plugin Information</h3>
+				<p><strong>S3 Bucket:</strong> <?php echo esc_html( $this->bucket ); ?></p>
+				<p><strong>S3 Region:</strong> <?php echo esc_html( $this->region ?: 'Default' ); ?></p>
+				<p><strong>CDN URL:</strong> <?php echo esc_html( $this->get_s3_url() ); ?></p>
+				<p><strong>Plugin Version:</strong> 1.1.9-webp</p>
+			</div>
+		</div>
+		
+		<style>
+		.s3-uploads-info {
+			border-radius: 4px;
+		}
+		.s3-uploads-info h3 {
+			margin-top: 0;
+			color: #0073aa;
+		}
+		.s3-uploads-info p {
+			margin: 8px 0;
+		}
+		.form-table th {
+			width: 200px;
+		}
+		#s3_uploads_webp_quality {
+			width: 80px;
+			text-align: center;
+		}
+		.wrap h1 {
+			margin-bottom: 15px;
+		}
+		.wrap form {
+			background: #fff;
+			padding: 20px;
+			border: 1px solid #ccd0d4;
+			border-radius: 4px;
+			margin-bottom: 20px;
+		}
+		</style>
+		<?php
 	}
 }
