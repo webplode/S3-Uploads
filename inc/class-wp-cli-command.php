@@ -14,14 +14,14 @@ class WP_CLI_Command extends \WP_CLI_Command {
 	 *
 	 * @subcommand verify
 	 */
-	public function verify_api_keys() {
+	public function verify_api_keys() : void {
 		// Verify first that we have the necessary access keys to connect to S3.
 		if ( ! $this->verify_s3_access_constants() ) {
 			return;
 		}
 
 		// Get S3 Upload instance.
-		$instance = Plugin::get_instance();
+		Plugin::get_instance();
 
 		// Create a path in the base directory, with a random file name to avoid potentially overwriting existing data.
 		$upload_dir = wp_upload_dir();
@@ -66,7 +66,7 @@ class WP_CLI_Command extends \WP_CLI_Command {
 
 		$path = null;
 
-		if ( strpos( S3_UPLOADS_BUCKET, '/' ) ) {
+		if ( strpos( S3_UPLOADS_BUCKET, '/' ) !== false ) {
 			$path = str_replace( strtok( S3_UPLOADS_BUCKET, '/' ) . '/', '', S3_UPLOADS_BUCKET );
 		}
 
@@ -99,7 +99,7 @@ class WP_CLI_Command extends \WP_CLI_Command {
       "Action": ["s3:ListBucket"],
       "Effect": "Allow",
       "Resource": ["arn:aws:s3:::' . $bucket . '"],
-      "Condition":{"StringLike":{"s3:prefix":["' . ( $path ? $path . '/' : '' ) . '*"]}}
+      "Condition":{"StringLike":{"s3:prefix":["' . ( $path !== null ? $path . '/' : '' ) . '*"]}}
     }
   ]
 }';
@@ -114,7 +114,7 @@ class WP_CLI_Command extends \WP_CLI_Command {
 	 *
 	 * @subcommand generate-iam-policy
 	 */
-	public function generate_iam_policy() {
+	public function generate_iam_policy() : void {
 
 		WP_Cli::print_value( $this->get_iam_policy() );
 
@@ -127,13 +127,13 @@ class WP_CLI_Command extends \WP_CLI_Command {
 	 *
 	 * @param array{0: string} $args
 	 */
-	public function ls( array $args ) {
+	public function ls( array $args ) : void {
 
 		$s3 = Plugin::get_instance()->s3();
 
 		$prefix = '';
 
-		if ( strpos( S3_UPLOADS_BUCKET, '/' ) ) {
+		if ( strpos( S3_UPLOADS_BUCKET, '/' ) !== false ) {
 			$prefix = trailingslashit( str_replace( strtok( S3_UPLOADS_BUCKET, '/' ) . '/', '', S3_UPLOADS_BUCKET ) );
 		}
 
@@ -165,7 +165,7 @@ class WP_CLI_Command extends \WP_CLI_Command {
 	 *
 	 * @param array{0: string, 1: string} $args
 	 */
-	public function cp( array $args ) {
+	public function cp( array $args ) : void {
 
 		$from = $args[0];
 		$to = $args[1];
@@ -188,7 +188,7 @@ class WP_CLI_Command extends \WP_CLI_Command {
 	 * @param array{0: string, 1: string} $args
 	 * @param array{concurrency?: int, verbose?: bool} $args_assoc
 	 */
-	public function upload_directory( array $args, array $args_assoc ) {
+	public function upload_directory( array $args, array $args_assoc ) : void {
 
 		$from = $args[0];
 		$to = '';
@@ -207,7 +207,7 @@ class WP_CLI_Command extends \WP_CLI_Command {
 		$transfer_args = [
 			'concurrency' => $args_assoc['concurrency'],
 			'debug'       => (bool) $args_assoc['verbose'],
-			'before'      => function ( Command $command ) {
+			'before'      => function ( Command $command ) : void {
 				if ( in_array( $command->getName(), [ 'PutObject', 'CreateMultipartUpload' ], true ) ) {
 					$acl = defined( 'S3_UPLOADS_OBJECT_ACL' ) ? S3_UPLOADS_OBJECT_ACL : 'public-read';
 					$command['ACL'] = $acl;
@@ -230,14 +230,14 @@ class WP_CLI_Command extends \WP_CLI_Command {
 	 * @param array{0: string} $args
 	 * @param array{regex?: string} $args_assoc
 	 */
-	public function rm( array $args, array $args_assoc ) {
+	public function rm( array $args, array $args_assoc ) : void {
 
 		$s3 = Plugin::get_instance()->s3();
 
 		$prefix = '';
 		$regex = isset( $args_assoc['regex'] ) ? $args_assoc['regex'] : '';
 
-		if ( strpos( S3_UPLOADS_BUCKET, '/' ) ) {
+		if ( strpos( S3_UPLOADS_BUCKET, '/' ) !== false ) {
 			$prefix = trailingslashit( str_replace( strtok( S3_UPLOADS_BUCKET, '/' ) . '/', '', S3_UPLOADS_BUCKET ) );
 		}
 
@@ -257,7 +257,7 @@ class WP_CLI_Command extends \WP_CLI_Command {
 				[
 					'before_delete',
 					function() {
-						WP_CLI::line( sprintf( 'Deleting file' ) );
+						WP_CLI::line( 'Deleting file' );
 					},
 				]
 			);
@@ -272,7 +272,7 @@ class WP_CLI_Command extends \WP_CLI_Command {
 	/**
 	 * Enable the auto-rewriting of media links to S3
 	 */
-	public function enable() {
+	public function enable() : void {
 		update_option( 's3_uploads_enabled', 'enabled' );
 
 		WP_CLI::success( 'Media URL rewriting enabled.' );
@@ -281,7 +281,7 @@ class WP_CLI_Command extends \WP_CLI_Command {
 	/**
 	 * Disable the auto-rewriting of media links to S3
 	 */
-	public function disable() {
+	public function disable() : void {
 		delete_option( 's3_uploads_enabled' );
 
 		WP_CLI::success( 'Media URL rewriting disabled.' );
@@ -297,7 +297,7 @@ class WP_CLI_Command extends \WP_CLI_Command {
 	 *
 	 * @param array{0: int} $args
 	 */
-	public function get_attachment_files( array $args ) {
+	public function get_attachment_files( array $args ) : void {
 		WP_CLI::print_value( Plugin::get_attachment_files( $args[0] ) );
 	}
 
@@ -311,12 +311,12 @@ class WP_CLI_Command extends \WP_CLI_Command {
 	 *
 	 * @param array{0: int, 1: 'public-read'|'private'} $args
 	 */
-	public function set_attachment_acl( array $args ) {
+	public function set_attachment_acl( array $args ) : void {
 		$result = Plugin::get_instance()->set_attachment_files_acl( $args[0], $args[1] );
 		WP_CLI::print_value( $result );
 	}
 
-	private function recurse_copy( string $src, string $dst ) {
+	private function recurse_copy( string $src, string $dst ) : void {
 		$dir = opendir( $src );
 		@mkdir( $dst );
 		while ( false !== ( $file = readdir( $dir ) ) ) {
