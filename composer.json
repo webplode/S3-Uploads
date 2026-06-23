@@ -1,6 +1,6 @@
 {
 	"name": "webplode/s3-uploads",
-	"version": "3.0.14",
+	"version": "3.0.15",
 	"description": "WordPress plugin to store uploads on S3 with WebP offload (webplode fork)",
 	"homepage": "https://github.com/webplode/S3-Uploads",
 	"keywords": [

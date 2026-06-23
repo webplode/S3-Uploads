@@ -50,21 +50,53 @@ add_filter( 's3_uploads_webp_quality', function( $quality ) {
 });
 ```
 
+### Required PHP extensions & settings (webplode fork)
+
+Enable these for the **same PHP version** your site uses (cPanel: **Select PHP Version → Extensions**, or **MultiPHP INI Editor**).
+
+| Extension / setting | Required for | If missing |
+|---------------------|--------------|------------|
+| **dom** (`php-xml`) | WordPress reads image metadata after upload (`DOMDocument`) | Upload reaches S3 then **fatal** / generic AJAX error |
+| **mbstring** | WordPress + plugins (e.g. TranslatePress) | HTML admin notices break Media Library JSON |
+| **imagick** | WebP prefilter + thumbnails on `s3://` | Skip prefilter or *cannot process image* on sizes |
+| **fileinfo** | MIME detection | Upload / security rejects |
+| **curl**, **openssl**, **json** | AWS SDK (Composer `vendor/`) | S3 API calls fail |
+| **exif** (recommended) | EXIF orientation / metadata | Odd rotation or metadata loss |
+| **`allow_url_fopen` = On** | S3 stream wrapper | Plugin refuses to load (admin notice) |
+
+**Verify on SSH:**
+
+```bash
+php -m | egrep -i 'dom|mbstring|imagick|fileinfo|curl|openssl|json|exif'
+php -i | grep allow_url_fopen
+```
+
+**Suggested php.ini (cPanel MultiPHP INI Editor):**
+
+```ini
+memory_limit = 512M
+max_execution_time = 120
+upload_max_filesize = 64M
+post_max_size = 64M
+allow_url_fopen = On
+```
+
 ### 🩺 Upload errors (plugin enabled only)
 
 If uploads work with the plugin **disabled** but fail when it is **enabled**, check the following:
 
 1. **`vendor/autoload.php` in `wp-config.php`** (before WordPress loads) and valid **S3/R2 credentials** (bucket, region, key/secret, endpoint filter for R2).
 2. **`allow_url_fopen`** must be enabled in PHP (required by this plugin).
-3. **Local `wp-content/uploads` must be writable** — the fork still writes `.htaccess` and font copies there even when media goes to S3.
-4. **Imagick** — WebP pre-conversion and thumbnails need the PHP Imagick extension; large images can trigger *"server cannot process the image"* if memory/time limits are low. To test, add to `wp-config.php`:
+3. **`dom` (XML)** — if the log shows `Class "DOMDocument" not found`, enable the **dom** extension (often packaged as **xml** in cPanel).
+4. **Local `wp-content/uploads` must be writable** — the fork still writes `.htaccess` and font copies there even when media goes to S3.
+5. **Imagick** — WebP pre-conversion and thumbnails need the PHP Imagick extension; large images can trigger *"server cannot process the image"* if memory/time limits are low. To test, add to `wp-config.php`:
    ```php
    define( 'S3_UPLOADS_DISABLE_WEBP_PREFILTER', true );
    ```
    Thumbnails still convert via the image editor when Imagick is available.
-5. **Nginx** — `.htaccess` rules are ignored; use equivalent redirect rules in your server config or `define( 'S3_UPLOADS_DISABLE_HTACCESS', true );`.
-6. **Upload succeeds but UI says "An error occurred"** — Another plugin (often **TranslatePress** missing **mbstring**) prints HTML before the upload JSON. Install `php-mbstring`, or rely on this fork’s media AJAX guard (filter `s3_uploads_clean_media_upload_ajax`, constant `S3_UPLOADS_MEDIA_UPLOAD_JSON_BUFFER`).
-7. **"The server cannot process the image" (2560px message)** — Usually **thumbnail/metadata** failed after the file reached S3, not the initial upload. Some images fail while others work (corrupt EXIF, memory, many theme sizes, huge file bytes). Enable logging below and retry one failing file.
+6. **Nginx** — `.htaccess` rules are ignored; use equivalent redirect rules in your server config or `define( 'S3_UPLOADS_DISABLE_HTACCESS', true );`.
+7. **Upload succeeds but UI says "An error occurred"** — Another plugin (often **TranslatePress** missing **mbstring**) prints HTML before the upload JSON. Install `php-mbstring`, or rely on this fork’s media AJAX guard (filter `s3_uploads_clean_media_upload_ajax`, constant `S3_UPLOADS_MEDIA_UPLOAD_JSON_BUFFER`).
+8. **"The server cannot process the image" (2560px message)** — Usually **thumbnail/metadata** failed after the file reached S3, not the initial upload. Some images fail while others work (corrupt EXIF, memory, many theme sizes, huge file bytes). Enable logging below and retry one failing file.
 
 ### Upload debug logging
 
@@ -88,7 +120,8 @@ Reproduce a **failed** upload, then search the log for:
 | `wp_handle_upload OK` | File moved to S3 path |
 | `generate_attachment_metadata START` | WordPress began thumbnails |
 | `generate_attachment_metadata FAILED` or `Multi-resize failed` | Thumbnail step broke — read next lines |
-| `PHP fatal/error on media AJAX shutdown` | Timeout / memory / Imagick crash |
+| `PHP fatal/error on media AJAX shutdown` | Timeout / memory / Imagick crash — check message for `DOMDocument`, `Imagick`, etc. |
+| `Class "DOMDocument" not found` | Enable PHP **dom** / **xml** extension (WordPress core, not S3) |
 | `peak_memory_mb` | If near your `memory_limit`, raise PHP memory |
 
 Disable verbose WebP line-by-line noise in production: `define( 'S3_UPLOADS_DEBUG_LOG', false );` and turn off `WP_DEBUG_LOG`.
@@ -131,8 +164,11 @@ It's focused on providing a highly robust S3 interface with no "bells and whistl
 
 ## Requirements
 
-- PHP >= 7.4
-- WordPress >= 5.3
+- **PHP >= 8.0** (tested with 8.3 / 8.4)
+- **WordPress >= 5.3** (6.7+ recommended)
+- **Composer** `vendor/` with `aws/aws-sdk-php` (see install below)
+- **PHP extensions:** `dom`, `mbstring`, `imagick` (WebP), `fileinfo`, `curl`, `openssl`, `json`; `exif` recommended
+- **`allow_url_fopen` enabled**
 
 ## Install / update via Composer (webplode fork)
 
