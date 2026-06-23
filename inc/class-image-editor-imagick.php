@@ -47,7 +47,8 @@ class Image_Editor_Imagick extends WP_Image_Editor_Imagick {
 			return true;
 		}
 
-		if ( $this->file !== null && $this->file !== '' && ! is_file( $this->file ) && ! preg_match( '|^https?://|', $this->file ) ) {
+		$is_remote_stream = $this->file !== null && $this->file !== '' && ( preg_match( '|^https?://|', $this->file ) || strpos( $this->file, 's3://' ) === 0 );
+		if ( $this->file !== null && $this->file !== '' && ! $is_remote_stream && ! is_file( $this->file ) ) {
 			return new WP_Error( 'error_loading_image', __( 'File doesn&#8217;t exist?' ), $this->file );
 		}
 
@@ -270,7 +271,7 @@ class Image_Editor_Imagick extends WP_Image_Editor_Imagick {
 	 * @param string $message
 	 */
 	protected function log_debug( string $message ) : void {
-		if ( defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
+		if ( \S3_Uploads\is_debug_logging_enabled() ) {
 			error_log( '[S3-Uploads WebP] ' . $message );
 		}
 	}

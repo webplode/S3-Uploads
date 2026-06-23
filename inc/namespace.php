@@ -40,6 +40,9 @@ function init() : void {
 		\WP_CLI::add_command( 's3-uploads', 'S3_Uploads\\WP_CLI_Command' );
 	}
 
+	require_once __DIR__ . '/upload-debug-log.php';
+	register_upload_debug_hooks();
+
 	$instance = Plugin::get_instance();
 	$instance->setup();
 
@@ -196,6 +199,95 @@ function move_temp_personal_data_to_s3( string $archive_pathname ) : void {
 	$destination = $exports_dir . pathinfo( $archive_pathname, PATHINFO_FILENAME ) . '.' . pathinfo( $archive_pathname, PATHINFO_EXTENSION );
 	copy( $archive_pathname, $destination );
 	unlink( $archive_pathname );
+}
+
+/**
+ * Whether the current request is a Media Library AJAX upload/browse call.
+ *
+ * @return bool
+ */
+function is_media_upload_ajax_request() : bool {
+	if ( ! wp_doing_ajax() ) {
+		return false;
+	}
+
+	$action = '';
+	if ( isset( $_REQUEST['action'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$action = sanitize_key( wp_unslash( $_REQUEST['action'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+	}
+
+	$media_actions = [
+		'upload-attachment',
+		'query-attachments',
+		'get-attachment',
+		'save-attachment',
+		'save-attachment-compat',
+		'send-attachment-to-editor',
+		'send-link-to-editor',
+		'image-editor',
+		'crop-image',
+	];
+
+	return in_array( $action, $media_actions, true );
+}
+
+/**
+ * Stop admin notices (e.g. TranslatePress mbstring) from breaking Media upload JSON.
+ *
+ * Upload succeeds but the UI shows a generic error when HTML is printed before {"success":true}.
+ */
+function register_media_upload_ajax_json_guard() : void {
+	if ( ! apply_filters( 's3_uploads_clean_media_upload_ajax', true ) ) {
+		return;
+	}
+
+	if ( ! is_media_upload_ajax_request() ) {
+		return;
+	}
+
+	add_action(
+		'admin_init',
+		static function () {
+			remove_all_actions( 'admin_notices' );
+			remove_all_actions( 'network_admin_notices' );
+			remove_all_actions( 'user_admin_notices' );
+			remove_all_actions( 'all_admin_notices' );
+		},
+		PHP_INT_MAX
+	);
+
+	if ( ! defined( 'S3_UPLOADS_MEDIA_UPLOAD_JSON_BUFFER' ) || S3_UPLOADS_MEDIA_UPLOAD_JSON_BUFFER ) {
+		ob_start();
+		add_action( 'shutdown', __NAMESPACE__ . '\\flush_clean_media_upload_ajax_buffer', 0 );
+	}
+}
+
+/**
+ * If plugins echoed HTML before JSON, output only the JSON object.
+ */
+function flush_clean_media_upload_ajax_buffer() : void {
+	$level = ob_get_level();
+	if ( $level < 1 ) {
+		return;
+	}
+
+	$buf = ob_get_clean();
+	if ( ! is_string( $buf ) || $buf === '' ) {
+		return;
+	}
+
+	$trimmed = ltrim( $buf );
+	if ( $trimmed !== '' && $trimmed[0] === '{' ) {
+		echo $buf;
+		return;
+	}
+
+	if ( preg_match( '/(\{[\s\S]*\})\s*$/', $buf, $matches ) ) {
+		echo $matches[1];
+		return;
+	}
+
+	echo $buf;
 }
 
 /**

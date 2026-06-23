@@ -50,6 +50,51 @@ add_filter( 's3_uploads_webp_quality', function( $quality ) {
 });
 ```
 
+### 🩺 Upload errors (plugin enabled only)
+
+If uploads work with the plugin **disabled** but fail when it is **enabled**, check the following:
+
+1. **`vendor/autoload.php` in `wp-config.php`** (before WordPress loads) and valid **S3/R2 credentials** (bucket, region, key/secret, endpoint filter for R2).
+2. **`allow_url_fopen`** must be enabled in PHP (required by this plugin).
+3. **Local `wp-content/uploads` must be writable** — the fork still writes `.htaccess` and font copies there even when media goes to S3.
+4. **Imagick** — WebP pre-conversion and thumbnails need the PHP Imagick extension; large images can trigger *"server cannot process the image"* if memory/time limits are low. To test, add to `wp-config.php`:
+   ```php
+   define( 'S3_UPLOADS_DISABLE_WEBP_PREFILTER', true );
+   ```
+   Thumbnails still convert via the image editor when Imagick is available.
+5. **Nginx** — `.htaccess` rules are ignored; use equivalent redirect rules in your server config or `define( 'S3_UPLOADS_DISABLE_HTACCESS', true );`.
+6. **Upload succeeds but UI says "An error occurred"** — Another plugin (often **TranslatePress** missing **mbstring**) prints HTML before the upload JSON. Install `php-mbstring`, or rely on this fork’s media AJAX guard (filter `s3_uploads_clean_media_upload_ajax`, constant `S3_UPLOADS_MEDIA_UPLOAD_JSON_BUFFER`).
+7. **"The server cannot process the image" (2560px message)** — Usually **thumbnail/metadata** failed after the file reached S3, not the initial upload. Some images fail while others work (corrupt EXIF, memory, many theme sizes, huge file bytes). Enable logging below and retry one failing file.
+
+### Upload debug logging
+
+Add to **`wp-config.php`** (above `/* That's all, stop editing! */`):
+
+```php
+define( 'WP_DEBUG', true );
+define( 'WP_DEBUG_LOG', true );
+define( 'WP_DEBUG_DISPLAY', false );
+// Always log S3 Uploads upload steps even if WP_DEBUG is off:
+define( 'S3_UPLOADS_DEBUG_LOG', true );
+```
+
+Log file: **`wp-content/debug.log`**
+
+Reproduce a **failed** upload, then search the log for:
+
+| Log line | Meaning |
+|----------|--------|
+| `Converting original image to WebP` | Prefilter ran (your JPEG case) |
+| `wp_handle_upload OK` | File moved to S3 path |
+| `generate_attachment_metadata START` | WordPress began thumbnails |
+| `generate_attachment_metadata FAILED` or `Multi-resize failed` | Thumbnail step broke — read next lines |
+| `PHP fatal/error on media AJAX shutdown` | Timeout / memory / Imagick crash |
+| `peak_memory_mb` | If near your `memory_limit`, raise PHP memory |
+
+Disable verbose WebP line-by-line noise in production: `define( 'S3_UPLOADS_DEBUG_LOG', false );` and turn off `WP_DEBUG_LOG`.
+
+**Quick tests:** upload the same image with `S3_UPLOADS_DISABLE_WEBP_PREFILTER` true; try raising `memory_limit` to `512M`; reduce registered image sizes (themes/plugins add many sizes per upload).
+
 ---
 
 <table width="100%">
@@ -89,9 +134,78 @@ It's focused on providing a highly robust S3 interface with no "bells and whistl
 - PHP >= 7.4
 - WordPress >= 5.3
 
-## Getting Set Up
+## Install / update via Composer (webplode fork)
 
-S3 Uploads requires installation via Composer:
+This fork is published as **`webplode/s3-uploads`** on GitHub. In your **WordPress project root** (where `composer.json` lives), add the VCS repository once, then require the package:
+
+```json
+{
+  "repositories": [
+    {
+      "type": "vcs",
+      "url": "https://github.com/webplode/S3-Uploads"
+    }
+  ],
+  "require": {
+    "webplode/s3-uploads": "dev-master"
+  },
+  "extra": {
+    "installer-paths": {
+      "wp-content/plugins/{$name}/": ["type:wordpress-plugin"]
+    }
+  },
+  "config": {
+    "allow-plugins": {
+      "composer/installers": true
+    }
+  }
+}
+```
+
+Then run:
+
+```bash
+composer update webplode/s3-uploads --with-dependencies
+```
+
+Or first-time install:
+
+```bash
+composer require webplode/s3-uploads:dev-master
+```
+
+**Pin a release** (recommended for production) after we tag on GitHub:
+
+```bash
+composer require webplode/s3-uploads:^3.0.12
+```
+
+Load Composer before WordPress in **`wp-config.php`**:
+
+```php
+require_once __DIR__ . '/vendor/autoload.php';
+```
+
+The plugin is installed to `wp-content/plugins/s3-uploads/` (package folder name from Composer). Activate **S3 Uploads** in WP Admin.
+
+**Update to latest GitHub `master`:**
+
+```bash
+composer clear-cache
+composer update webplode/s3-uploads --with-dependencies
+```
+
+If Composer says “nothing to update”, delete `composer.lock` entry or run:
+
+```bash
+composer require webplode/s3-uploads:dev-master --update-with-dependencies
+```
+
+---
+
+## Getting Set Up (upstream humanmade)
+
+Upstream package name:
 
 ```
 composer require humanmade/s3-uploads

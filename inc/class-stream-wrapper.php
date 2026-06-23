@@ -1067,13 +1067,13 @@ class Stream_Wrapper {
 		$params['Key'] = rtrim( $params['Key'] ?? '', '/' ) . '/';
 		$params['Body'] = '';
 
-		// Fail if this pseudo directory key already exists
+		// S3 has no real directories; an existing prefix is success for wp_mkdir_p().
 		if ( $this->getClient()->doesObjectExistV2(
 			$params['Bucket'],
 			$params['Key']
 		)
 		) {
-			return $this->triggerError( "Subfolder already exists: {$path}" );
+			return true;
 		}
 
 		return $this->boolCall(
