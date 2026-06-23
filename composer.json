@@ -1,7 +1,8 @@
 {
 	"name": "webplode/s3-uploads",
-	"description": "WordPress plugin to store uploads on S3",
-	"homepage": "https://github.com/humanmade/S3-Uploads",
+	"version": "3.0.14",
+	"description": "WordPress plugin to store uploads on S3 with WebP offload (webplode fork)",
+	"homepage": "https://github.com/webplode/S3-Uploads",
 	"keywords": [
 		"wordpress"
 	],
@@ -16,8 +17,8 @@
 		}
 	],
 	"support": {
-			"issues": "https://github.com/humanmade/s3-uploads/issues",
-			"source": "https://github.com/humanmade/s3-uploads"
+		"issues": "https://github.com/webplode/S3-Uploads/issues",
+		"source": "https://github.com/webplode/S3-Uploads"
 	},
 	"type": "wordpress-plugin",
 	"require": {

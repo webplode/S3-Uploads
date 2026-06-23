@@ -63,7 +63,7 @@ function init() : void {
 function check_requirements() : bool {
 	global $wp_version;
 
-	if ( version_compare( PHP_VERSION, '7.4', '<' ) ) {
+	if ( version_compare( PHP_VERSION, '8.0', '<' ) ) {
 		if ( is_admin() && ! defined( 'DOING_AJAX' ) ) {
 			add_action( 'admin_notices', __NAMESPACE__ . '\\outdated_php_version_notice', 10, 0 );
 		}
@@ -97,7 +97,7 @@ function check_requirements() : bool {
  */
 function outdated_php_version_notice() : void {
 	printf(
-		'<div class="error"><p>The S3 Uploads plugin requires PHP version 7.4 or higher. Your server is running PHP version %s.</p></div>',
+		'<div class="error"><p>The S3 Uploads plugin requires PHP version 8.0 or higher. Your server is running PHP version %s.</p></div>',
 		PHP_VERSION
 	);
 }
